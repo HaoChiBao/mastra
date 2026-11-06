@@ -95,28 +95,8 @@ function buildElemMatchConditions(value: any, paramIndex: number): { sql: string
   const conditions: string[] = [];
   const values: any[] = [];
 
-  Object.entries(value).forEach(([field, val]) => {
+  const applyOperator = (paramKey: string, paramOperator: string, paramValue: any) => {
     const nextParamIndex = paramIndex + values.length;
-
-    let paramOperator;
-    let paramKey;
-    let paramValue;
-
-    if (field.startsWith('$')) {
-      paramOperator = field;
-      paramKey = '';
-      paramValue = val;
-    } else if (typeof val === 'object' && !Array.isArray(val)) {
-      const [op, opValue] = Object.entries(val || {})[0] || [];
-      paramOperator = op;
-      paramKey = field;
-      paramValue = opValue;
-    } else {
-      paramOperator = '$eq';
-      paramKey = field;
-      paramValue = val;
-    }
-
     const operatorFn = FILTER_OPERATORS[paramOperator as OperatorType];
     if (!operatorFn) {
       throw new Error(`Invalid operator: ${paramOperator}`);
@@ -135,6 +115,25 @@ function buildElemMatchConditions(value: any, paramIndex: number): { sql: string
     conditions.push(sql);
     if (result.needsValue) {
       values.push(paramValue);
+    }
+  };
+
+  Object.entries(value).forEach(([field, val]) => {
+    if (field.startsWith('$')) {
+      applyOperator('', field, val);
+    } else if (typeof val === 'object' && !Array.isArray(val)) {
+      // Nested field with operators (e.g. score: { $gte: 20, $lte: 80 }).
+      // AND every operator — matching MongoDB / libSQL semantics. Taking only
+      // Object.entries(val)[0] would drop later bounds and over-match (and over-delete).
+      const opEntries = Object.entries(val || {});
+      if (opEntries.length === 0) {
+        throw new Error('Invalid operator: undefined');
+      }
+      for (const [op, opValue] of opEntries) {
+        applyOperator(field, op, opValue);
+      }
+    } else {
+      applyOperator(field, '$eq', val);
     }
   });
 
