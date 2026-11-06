@@ -116,10 +116,9 @@ export function createFilterOperatorsTest(config: VectorTestConfig) {
           description: 'Classic novel',
           ...(supportsArrayMetadata
             ? {
-                reviews: [
-                  { score: 3, author: 'user1' },
-                  { score: 5, author: 'user2' },
-                ],
+                // Only score 5: must NOT match { $gte: 3, $lte: 4 }. A store that
+                // applies only the first nested operator ($gte) would incorrectly include this.
+                reviews: [{ score: 5, author: 'user2' }],
               }
             : {}),
         },
@@ -1057,8 +1056,10 @@ export function createFilterOperatorsTest(config: VectorTestConfig) {
             filter: { reviews: { $elemMatch: { score: { $gte: 3, $lte: 4 } } } },
           });
 
-          // Should return products with a review score between 3 and 4
-          expect(results.length).toBeGreaterThan(0);
+          // Product H has score 4 (in range). Product G has only score 5 — included only if
+          // the store drops $lte and keeps $gte alone.
+          expect(results.length).toBe(1);
+          expect(results[0]?.metadata?.name).toBe('Product H');
           expect(
             results.every(r => {
               const reviews = r.metadata?.reviews as Array<{ score: number }> | undefined;

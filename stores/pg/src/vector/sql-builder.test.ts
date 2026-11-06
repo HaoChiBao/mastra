@@ -92,6 +92,28 @@ describe('buildFilterQuery - numeric range operators', () => {
     expect(sql).toContain(`(elem->>'price')::numeric > `);
     expect(sql).not.toContain(`metadata->'price'`);
   });
+
+  it('ANDs every operator on a nested field inside $elemMatch', () => {
+    // Technical: buildElemMatchConditions used to keep only Object.entries(val)[0],
+    // so { $gte, $lte } dropped the upper bound and over-matched (also via deleteVectors).
+    const filter = { tags: { $elemMatch: { score: { $gte: 20, $lte: 80 } } } };
+
+    const search = buildFilterQuery(filter, 0, 10);
+    expect(search.values).toEqual([0, 10, 20, 80]);
+    expect(search.sql).toContain(`(elem->>'score')::numeric >= $3::numeric`);
+    expect(search.sql).toContain(`(elem->>'score')::numeric <= $4::numeric`);
+    expect(search.sql).toMatch(
+      /\(elem->>'score'\)::numeric >= \$3::numeric[\s\S]*AND[\s\S]*\(elem->>'score'\)::numeric <= \$4::numeric/,
+    );
+
+    const del = buildDeleteFilterQuery(filter);
+    expect(del.values).toEqual([20, 80]);
+    expect(del.sql).toContain(`(elem->>'score')::numeric >= $1::numeric`);
+    expect(del.sql).toContain(`(elem->>'score')::numeric <= $2::numeric`);
+    expect(del.sql).toMatch(
+      /\(elem->>'score'\)::numeric >= \$1::numeric[\s\S]*AND[\s\S]*\(elem->>'score'\)::numeric <= \$2::numeric/,
+    );
+  });
 });
 
 describe('buildFilterQuery - multi-key branches inside logical operators', () => {
